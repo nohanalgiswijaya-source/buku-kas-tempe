@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import io
 import plotly.express as px
 
-# --- CONFIG FILE EXCEL LOKAL (100% OFFLINE AMAN) ---
+# --- CONFIG FILE EXCEL LOKAL ---
 nama_file_excel = "buku_kas_tempe_umkm.xlsx"
 
 def load_data_offline():
@@ -32,7 +32,6 @@ df_keuangan["Keluar (Rp)"] = pd.to_numeric(df_keuangan["Keluar (Rp)"]).fillna(0)
 # --- SETTING DASHBOARD ---
 st.set_page_config(page_title="Buku Kas Tempe Rumahan", layout="wide")
 st.title("🧱 BUKU KAS ARUS KEUANGAN - PRODUKSI TEMPE RUMAHAN")
-st.write("✨ **Versi Pembaruan** — Ditambahkan fitur Hapus Semua Histori (Clear All History).")
 
 st.divider()
 
@@ -49,8 +48,9 @@ with tab1:
     
     with col1:
         tanggal = st.date_input("Tanggal Transaksi", datetime.now().date(), key="tgl_kas")
-        jenis = st.selectbox("Jenis (Pemasukan/Pengeluaran/Modal)", ["Pemasukan", "Pengeluaran", "Modal"])
+        jenis = st.selectbox("Jenis Transaksi", ["Pemasukan", "Pengeluaran", "Modal"])
         
+        # Otomatisasi Kategori berdasarkan Jenis
         if jenis == "Pemasukan":
             kategori_opsi = ["Tempe Mentah Biasa", "Pendapatan Kripik Tempe", "Pendapatan Tempe Koro", "Lain-lain (Pemasukan)"]
         elif jenis == "Modal":
@@ -61,8 +61,17 @@ with tab1:
         kategori_spesifik = st.selectbox("Kategori Spesifik", kategori_opsi)
 
     with col2:
-        keterangan = st.text_area("Keterangan Transaksi / Catatan Pembeli / Detail Pesanan")
-        bukti_nota = st.selectbox("Bukti Nota", ["Kas masuk", "Diterima", "Pending"])
+        keterangan = st.text_area("Keterangan Transaksi / Catatan Pembeli", placeholder="Contoh: DP Pesanan Pak Budi 100 biji. Sisa pelunasan Rp 100.000")
+        
+        # 🌟 OTOMATISASI STATUS PEMBAYARAN DI SINI 🌟
+        if jenis == "Pemasukan":
+            status_opsi = ["Lunas", "DP / Uang Muka", "Pending"]
+        elif jenis == "Modal":
+            status_opsi = ["Lunas / Masuk Kas"]
+        else:
+            status_opsi = ["Dibayar (Lunas)", "Bon / Utang Belum Lunas"]
+            
+        bukti_nota = st.selectbox("Status Pembayaran", status_opsi)
         metode_bayar = st.selectbox("Metode Pembayaran", ["Tunai", "Transfer"])
 
     with col3:
@@ -148,7 +157,6 @@ with tab1:
         st.markdown("---")
         st.markdown("### 🗑️ Panel Hapus Transaksi")
         
-        # Pilihan hapus satu per satu
         pilihan_tabel_hapus = st.radio("Pilih dari tabel mana data yang mau dihapus:", ["Tabel Pemasukan", "Tabel Pengeluaran"], horizontal=True)
         
         if pilihan_tabel_hapus == "Tabel Pemasukan" and not df_pemasukan.empty:
@@ -169,10 +177,8 @@ with tab1:
                 st.success("Transaksi pengeluaran berhasil dihapus!")
                 st.rerun()
         
-        # 🌟 BAGIAN BARU: TOMBOL UTK CLEAR ALL HISTORY 🌟
         st.markdown("⚠️ **Zona Bahaya**")
         if st.button("❌ HAPUS SEMUA HISTORI TRANSAKSI (RESET TOTAL)", use_container_width=True):
-            # Membuat dataframe kosong sesuai struktur awal
             kolom_kosong = ["Tanggal", "Keterangan Transaksi", "Jenis", "Kategori Spesifik", "Masuk (Rp)", "Keluar (Rp)", "Bukti Nota", "Metode Pembayaran"]
             df_kosong = pd.DataFrame(columns=kolom_kosong)
             df_kosong.to_excel(nama_file_excel, index=False)
@@ -214,7 +220,6 @@ with tab2:
         
     df_filtered = df_keuangan[(df_keuangan["Tanggal"] >= tgl_mulai) & (df_keuangan["Tanggal"] <= hari_ini)]
     
-    # Perhitungan Omzet Produk Spesifik UMKM
     jual_mentah = df_filtered[df_filtered["Kategori Spesifik"] == "Tempe Mentah Biasa"]["Masuk (Rp)"].sum()
     jual_kripik = df_filtered[df_filtered["Kategori Spesifik"] == "Pendapatan Kripik Tempe"]["Masuk (Rp)"].sum()
     jual_koro = df_filtered[df_filtered["Kategori Spesifik"] == "Pendapatan Tempe Koro"]["Masuk (Rp)"].sum()
@@ -222,7 +227,6 @@ with tab2:
     
     total_omzet_produk = jual_mentah + jual_kripik + jual_koro + jual_lain
     
-    # Perhitungan Biaya Operasional
     cost_bahan = df_filtered[df_filtered["Kategori Spesifik"] == "Bahan Baku"]["Keluar (Rp)"].sum()
     cost_dapur = df_filtered[df_filtered["Kategori Spesifik"] == "Operasional Dapur"]["Keluar (Rp)"].sum()
     cost_trans = df_filtered[df_filtered["Kategori Spesifik"] == "Transportasi"]["Keluar (Rp)"].sum()
@@ -233,7 +237,6 @@ with tab2:
     total_biaya_operasional = cost_bahan + cost_dapur + cost_trans + cost_alat + cost_kemas + cost_lain
     laba_bersih_analisis = total_omzet_produk - total_biaya_operasional
     
-    # Ringkasan Angka Metrik di Laporan
     m1, m2, m3 = st.columns(3)
     m1.metric("Total Pemasukan (Omzet)", f"Rp {total_omzet_produk:,.0f}")
     m2.metric("Total Pengeluaran Beban", f"Rp {total_biaya_operasional:,.0f}")
