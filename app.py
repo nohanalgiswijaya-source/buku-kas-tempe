@@ -42,7 +42,7 @@ if st.session_state["login_umkm"] is None:
     tab_masuk, tab_daftar = st.tabs(["Masuk Ke Buku Kas", "Daftar UMKM baru"])
     
     with tab_masuk:
-        st.subheader("Silakan masukkan identitas usaha Anda untuk melihat kas")
+        st.subheader("Silakan masukkan nama UMKM Anda untuk melihat kas")
         input_nama_masuk = st.text_input("Nama UMKM / Usaha Anda:", placeholder="Ketik nama toko Anda...")
         input_token_masuk = st.text_input("Token / PIN Rahasia Usaha:", type="password", placeholder="Masukkan token Anda...")
         
