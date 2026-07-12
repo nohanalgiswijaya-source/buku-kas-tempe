@@ -39,7 +39,7 @@ if "login_umkm" not in st.session_state:
 # ==========================================
 if st.session_state["login_umkm"] is None:
     
-    tab_masuk, tab_daftar = st.tabs(["Masuk Ke Buku Kas", "Daftar Akun Usaha Baru"])
+    tab_masuk, tab_daftar = st.tabs(["Masuk Ke Buku Kas", "Daftar UMKM baru"])
     
     with tab_masuk:
         st.subheader("Silakan masukkan identitas usaha Anda untuk melihat kas")
@@ -69,7 +69,7 @@ if st.session_state["login_umkm"] is None:
                     st.error("Token Rahasia salah! Akses ditolak.")
                     
     with tab_daftar:
-        st.subheader("Pendaftaran Ruang Pembukuan Baru")
+        st.subheader("Pendaftaran UMKM")
         
         input_nama_daftar = st.text_input("Nama UMKM Baru:", placeholder="Contoh: Warung Berkah, Laundry Wangi")
         input_token_daftar = st.text_input("Buat Token / PIN Rahasia Baru (Bebas Angka/Huruf):", type="password", placeholder="Contoh: 12345 atau rahasiatoko")
