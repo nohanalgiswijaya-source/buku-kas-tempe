@@ -46,7 +46,7 @@ if st.session_state["login_umkm"] is None:
         input_nama_masuk = st.text_input("Nama UMKM / Usaha Anda:", placeholder="Ketik nama toko Anda...")
         input_token_masuk = st.text_input("Token / PIN Rahasia Usaha:", type="password", placeholder="Masukkan token Anda...")
         
-        tombol_masuk = st.button("Melihat Pencatatan")
+        tombol_masuk = st.button("Melihat Pembukuan")
         
         if tombol_masuk:
             df_master = load_master_kredensi()
@@ -69,7 +69,7 @@ if st.session_state["login_umkm"] is None:
                     st.error("Token Rahasia salah! Akses ditolak.")
                     
     with tab_daftar:
-        st.subheader("Pendaftaran UMKM")
+        st.subheader("Pendaftaran Akun Usaha Baru")
         
         input_nama_daftar = st.text_input("Nama UMKM Baru:", placeholder="Contoh: Warung Berkah, Laundry Wangi")
         input_token_daftar = st.text_input("Buat Token / PIN Rahasia Baru (Bebas Angka/Huruf):", type="password", placeholder="Contoh: 12345 atau rahasiatoko")
