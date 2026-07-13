@@ -10,7 +10,6 @@ st.set_page_config(page_title="BUKUDIGI - Catatan Keuangan Usaha", layout="wide"
 
 st.title("BUKUDIGI - Buku Catatan Digital Keuangan Usahamu")
 st.markdown("### *Kelola pemasukan dan pengeluaran dengan lebih rapi.*")
-st.write("Sistem Arus Kas Riil - Pencatatan transaksi bertahap berdasarkan perpindahan uang fisik agar kas toko selalu cocok dengan dompet nyata.")
 
 st.divider()
 
@@ -590,7 +589,7 @@ with tab3:
         
         pilihan_periode = st.selectbox("Pilih Rentang Laporan Keuangan:", ["Semua Periode", "3 Bulan Terakhir", "Bulan Ini Saja"])
         
-        # --- PERBAIKAN PENYARINGAN FILTER TANGGAL DI BAWAH INI ---
+        # --- PERBAIKAN FILTER TANGGAL: Pilihan "Semua Periode" mengambil seluruh data tanpa batas atas hari_ini ---
         if pilihan_periode == "3 Bulan Terakhir":
             tgl_mulai = tiga_bulan_lalu
             df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
@@ -598,7 +597,6 @@ with tab3:
             tgl_mulai = hari_ini.replace(day=1)
             df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
         else:
-            # Pilihan "Semua Periode" akan mengambil seluruh isi data tanpa batasan batas hari ini (Mendukung input tahun 2026+)
             df_filtered = df_master.copy()
             
         in_utama = df_filtered[df_filtered["Kategori Spesifik"] == "Penjualan Produk Utama"]["Masuk (Rp)"].sum()
@@ -615,15 +613,15 @@ with tab3:
         out_lain = df_filtered[df_filtered["Kategori Spesifik"] == "Lain-lain (Pengeluaran)"]["Keluar (Rp)"].sum()
         total_biaya_operasional = out_bahan + out_operasional + out_gaji + out_alat + out_trans + out_lain
         
-        laba_bersih_analisis = total_omzet_produk - total_biaya_operasional
+        laba_Internal = total_omzet_produk - total_biaya_operasional
         
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Pemasukan (Omzet Nyata)", f"Rp {total_omzet_produk:,.0f}".replace(",", "."))
         m2.metric("Total Biaya Pengeluaran", f"Rp {total_biaya_operasional:,.0f}".replace(",", "."))
-        if laba_bersih_analisis >= 0:
-            m3.metric("LABA BERSIH USAHA", f"Rp {laba_bersih_analisis:,.0f}".replace(",", "."))
+        if laba_Internal >= 0:
+            m3.metric("LABA BERSIH USAHA", f"Rp {laba_Internal:,.0f}".replace(",", "."))
         else:
-            m3.metric("RUGI BERSIH USAHA", f"Rp {abs(laba_bersih_analisis):,.0f}".replace(",", "."))
+            m3.metric("RUGI BERSIH USAHA", f"Rp {abs(laba_Internal):,.0f}".replace(",", "."))
             
         st.divider()
         col_kiri, col_kanan = st.columns(2)
@@ -635,6 +633,9 @@ with tab3:
                     "Sumber Pendapatan": ["Produk Utama", "Jasa/Komisi", "Sampingan", "Lain-lain"],
                     "Jumlah (Rp)": [in_utama, in_jasa, in_sampingan, in_lain]
                 })
+                # --- DILAKUKAN FILTER HANYA DATA > 0: Menghilangkan penumpukan 0% ---
+                df_pie_in = df_pie_in[df_pie_in["Jumlah (Rp)"] > 0]
+                
                 fig_in = px.pie(df_pie_in, values="Jumlah (Rp)", names="Sumber Pendapatan", hole=0.3)
                 st.plotly_chart(fig_in, use_container_width=True)
             else:
@@ -647,6 +648,9 @@ with tab3:
                     "Kategori Pengeluaran": ["Bahan/Stok", "Operasional", "Gaji", "Alat Usaha", "Transportasi", "Lain-lain"],
                     "Jumlah (Rp)": [out_bahan, out_operasional, out_gaji, out_alat, out_trans, out_lain]
                 })
+                # --- DILAKUKAN FILTER HANYA DATA > 0: Menghilangkan penumpukan 0% ---
+                df_pie_out = df_pie_out[df_pie_out["Jumlah (Rp)"] > 0]
+                
                 fig_out = px.pie(df_pie_out, values="Jumlah (Rp)", names="Kategori Pengeluaran", hole=0.3, color_discrete_sequence=px.colors.sequential.RdBu)
                 st.plotly_chart(fig_out, use_container_width=True)
             else:
