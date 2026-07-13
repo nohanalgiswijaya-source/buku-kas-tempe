@@ -50,11 +50,11 @@ if st.session_state["login_umkm"] is None:
         tombol_masuk = st.button("Buka dan Load Buku Kas")
         
         if tombol_masuk:
-            df_master = load_master_kredensi()
+            df_master_kred = load_master_kredensi()
             nama_clean = input_nama_masuk.strip()
             token_clean = input_token_masuk.strip()
             
-            user_match = df_master[df_master["Nama UMKM"].str.lower() == nama_clean.lower()]
+            user_match = df_master_kred[df_master_kred["Nama UMKM"].str.lower() == nama_clean.lower()]
             
             if user_match.empty:
                 st.error("Nama UMKM belum terdaftar! Silakan daftar baru di tab sebelah.")
@@ -85,8 +85,8 @@ if st.session_state["login_umkm"] is None:
             if nama_df_clean == "" or token_df_clean == "":
                 st.error("Nama UMKM dan Token tidak boleh kosong!")
             else:
-                df_master = load_master_kredensi()
-                if not df_master.empty and nama_df_clean.lower() in df_master["Nama UMKM"].str.lower().values:
+                df_master_kred = load_master_kredensi()
+                if not df_master_kred.empty and nama_df_clean.lower() in df_master_kred["Nama UMKM"].str.lower().values:
                     st.error("Nama UMKM ini sudah terdaftar sebelumnya! Gunakan nama lain or langsung login.")
                 else:
                     daftarkan_umkm_baru(nama_df_clean, token_df_clean)
@@ -179,7 +179,7 @@ with tab1:
         keterangan = st.text_area("Keterangan Transaksi / Nama Pelanggan / Supplier", placeholder="Contoh: Pembelian ayam potong 10kg dari Pak Ali\nContoh pemasukan: Penjualan pesanan kue tart Ibu Rina")
         
         if jenis == "Pemasukan":
-            status_opsi = ["Lunas", "Belum Lunas / Piutang"]
+            status_opsi = ["Lunas", "DP / Uang Muka", "Belum Lunas / Piutang"]
             status_bayar = st.selectbox("Status Transaksi", status_opsi)
         elif jenis == "Modal":
             status_bayar = "Lunas / Masuk Kas"
@@ -332,7 +332,7 @@ with tab1:
         st.info("Buku pembukuan kas Anda masih kosong.")
 
 # ==========================================
-# TAB 2: PANTAU UTANG & PIUTANG (DENGAN TANGGAL ADJUSTMENT)
+# TAB 2: PANTAU UTANG & PIUTANG 
 # ==========================================
 with tab2:
     st.header("Panel Monitoring dan Pelunasan Tanggungan Usaha")
@@ -401,9 +401,7 @@ with tab2:
                 st.markdown("##### Proses Pembayaran Piutang Pelanggan")
                 no_lunas_piutang = st.number_input("Pilih 'No' baris piutang:", min_value=1, max_value=len(df_piutang_tampil), step=1, key="p_no")
                 
-                # FITUR BARU: Input tanggal kustom untuk cicilan/DP piutang
                 tanggal_bayar_p = st.date_input("Tanggal Penerimaan Uang Cicilan:", datetime.now().date(), key="p_tgl_bayar")
-                
                 status_baru_p = st.selectbox("Status Pembayaran Sekarang:", ["DP / Uang Muka (Dicicil Lagi)", "Lunas dibayar Penuh"], key="p_stat")
                 
                 if "val_bayar_p" not in st.session_state:
@@ -439,7 +437,7 @@ with tab2:
                             prefix_p = "[Cicilan Baru]"
                         
                         new_trans = pd.DataFrame([{
-                            "Tanggal": tanggal_bayar_p,  # Menggunakan tanggal input pilihan user
+                            "Tanggal": tanggal_bayar_p,
                             "Keterangan Transaksi": f"{prefix_p} {ket_asli_toko} | ID_REF:{id_target}",
                             "Jenis": "Pemasukan",
                             "Kategori Spesifik": "Penjualan Produk Utama",
@@ -518,9 +516,7 @@ with tab2:
                 st.markdown("##### Proses Bayar Bon / Utang ke Supplier")
                 no_lunas_utang = st.number_input("Pilih 'No' baris utang:", min_value=1, max_value=len(df_utang_tampil), step=1, key="u_no")
                 
-                # FITUR BARU: Input tanggal kustom untuk cicilan/bayar utang supplier
                 tanggal_bayar_u = st.date_input("Tanggal Pembayaran Cicilan Bon:", datetime.now().date(), key="u_tgl_bayar")
-                
                 status_baru_u = st.selectbox("Status Pembayaran Sekarang:", ["Bon / Utang Usaha (Dicicil Baru)", "Dibayar Lunas Penuh"], key="u_stat")
                 
                 if "val_bayar_u" not in st.session_state:
@@ -556,7 +552,7 @@ with tab2:
                             prefix_u = "[Bayar Cicilan]"
                         
                         new_trans = pd.DataFrame([{
-                            "Tanggal": tanggal_bayar_u,  # Menggunakan tanggal input pilihan user
+                            "Tanggal": tanggal_bayar_u,
                             "Keterangan Transaksi": f"{prefix_u} {ket_asli_toko} | ID_REF:{id_target}",
                             "Jenis": "Pengeluaran",
                             "Kategori Spesifik": "Bahan Baku / Stok Barang",
@@ -578,12 +574,13 @@ with tab2:
         st.info("Belum ada data transaksi yang tercatat untuk dipantau.")
 
 # ==========================================
-# TAB 3: LAPORAN LABA RUGI & ANALISIS USAHA
+# TAB 3: LAPORAN LABA RUGI & ANALISIS USAHA (REAL-TIME FIXED)
 # ==========================================
 with tab3:
     st.header("Analisis Laba Rugi Toko Anda")
     
-    if not df_keuangan.empty:
+    # PERBAIKAN: Membaca dari df_master (data kumulatif terbaru beserta id cicilan baru)
+    if not df_master.empty:
         hari_ini = datetime.now().date()
         tiga_bulan_lalu = hari_ini - timedelta(days=90)
         
@@ -594,9 +591,9 @@ with tab3:
         elif pilihan_periode == "Bulan Ini Saja":
             tgl_mulai = hari_ini.replace(day=1)
         else:
-            tgl_mulai = df_keuangan["Tanggal"].min()
+            tgl_mulai = df_master["Tanggal"].min()
             
-        df_filtered = df_keuangan[(df_keuangan["Tanggal"] >= tgl_mulai) & (df_keuangan["Tanggal"] <= hari_ini)]
+        df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)]
         
         in_utama = df_filtered[df_filtered["Kategori Spesifik"] == "Penjualan Produk Utama"]["Masuk (Rp)"].sum()
         in_jasa = df_filtered[df_filtered["Kategori Spesifik"] == "Pendapatan Jasa / Komisi"]["Masuk (Rp)"].sum()
@@ -615,7 +612,7 @@ with tab3:
         laba_bersih_analisis = total_omzet_produk - total_biaya_operasional
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total Pemasukan (Omzet)", f"Rp {total_omzet_produk:,.0f}".replace(",", "."))
+        m1.metric("Total Pemasukan (Omzet Nyata)", f"Rp {total_omzet_produk:,.0f}".replace(",", "."))
         m2.metric("Total Biaya Pengeluaran", f"Rp {total_biaya_operasional:,.0f}".replace(",", "."))
         if laba_bersih_analisis >= 0:
             m3.metric("LABA BERSIH USAHA", f"Rp {laba_bersih_analisis:,.0f}".replace(",", "."))
