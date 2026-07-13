@@ -132,10 +132,14 @@ def load_data_offline():
 
 df_keuangan = load_data_offline()
 
-# Format dasar kolom dataframe
-df_keuangan["Tanggal"] = pd.to_datetime(df_keuangan["Tanggal"]).dt.date
-df_keuangan["Masuk (Rp)"] = pd.to_numeric(df_keuangan["Masuk (Rp)"]).fillna(0)
-df_keuangan["Keluar (Rp)"] = pd.to_numeric(df_keuangan["Keluar (Rp)"]).fillna(0)
+# --- PERBAIKAN DAN STRIP SPASI LIAR SAAT LOAD EXCEL ---
+if not df_keuangan.empty:
+    df_keuangan["Tanggal"] = pd.to_datetime(df_keuangan["Tanggal"], errors="coerce").dt.date
+    df_keuangan["Masuk (Rp)"] = pd.to_numeric(df_keuangan["Masuk (Rp)"], errors="coerce").fillna(0)
+    df_keuangan["Keluar (Rp)"] = pd.to_numeric(df_keuangan["Keluar (Rp)"], errors="coerce").fillna(0)
+    # Bersihkan spasi tidak sengaja di awal/akhir teks kategori agar grafik mendeteksi datanya
+    if "Kategori Spesifik" in df_keuangan.columns:
+        df_keuangan["Kategori Spesifik"] = df_keuangan["Kategori Spesifik"].astype(str).str.strip()
 
 # Pembuatan Data Kumulatif & ID Asli database
 if not df_keuangan.empty:
@@ -238,7 +242,7 @@ with tab1:
                 "Tanggal": tanggal,
                 "Keterangan Transaksi": keterangan_final,
                 "Jenis": jenis,
-                "Kategori Spesifik": kategori_spesifik,
+                "Kategori Spesifik": kategori_spesifik.strip(),
                 "Masuk (Rp)": masuk,
                 "Keluar (Rp)": keluar,
                 "Status Pembayaran": status_bayar,
@@ -277,7 +281,7 @@ with tab1:
             kolom_in = ["Tanggal", "Keterangan Transaksi", "Kategori Spesifik", "Masuk (Rp)", "Saldo Sisa (Rp)", "Status Pembayaran", "Metode Pembayaran"]
             df_pemasukan_v = df_pemasukan[kolom_in].copy()
             df_pemasukan_v["Tanggal"] = df_pemasukan_v["Tanggal"].astype(str)
-            df_pemasukan_v["Keterangan Transaksi"] = df_pemasukan_v["Keterangan Transaksi"].apply(lambda x: x.split(" | TOTAL_AWAL:")[0])
+            df_pemasukan_v["Keterangan Transaksi"] = df_pemasukan_v["Keterangan Transaksi"].apply(lambda x: str(x).split(" | TOTAL_AWAL:")[0])
             df_pemasukan_v["Masuk (Rp)"] = df_pemasukan_v["Masuk (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             df_pemasukan_v["Saldo Sisa (Rp)"] = df_pemasukan_v["Saldo Sisa (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             st.dataframe(df_pemasukan_v, use_container_width=True)
@@ -290,7 +294,7 @@ with tab1:
             kolom_out = ["Tanggal", "Keterangan Transaksi", "Kategori Spesifik", "Keluar (Rp)", "Saldo Sisa (Rp)", "Status Pembayaran", "Metode Pembayaran"]
             df_pengeluaran_v = df_pengeluaran[kolom_out].copy()
             df_pengeluaran_v["Tanggal"] = df_pengeluaran_v["Tanggal"].astype(str)
-            df_pengeluaran_v["Keterangan Transaksi"] = df_pengeluaran_v["Keterangan Transaksi"].apply(lambda x: x.split(" | TOTAL_AWAL:")[0])
+            df_pengeluaran_v["Keterangan Transaksi"] = df_pengeluaran_v["Keterangan Transaksi"].apply(lambda x: str(x).split(" | TOTAL_AWAL:")[0])
             df_pengeluaran_v["Keluar (Rp)"] = df_pengeluaran_v["Keluar (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             df_pengeluaran_v["Saldo Sisa (Rp)"] = df_pengeluaran_v["Saldo Sisa (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             st.dataframe(df_pengeluaran_v, use_container_width=True)
@@ -342,7 +346,7 @@ with tab2:
         col_piutang, col_utang = st.columns(2)
         
         # ------------------------------------------
-        # BAGIAN LAJUR PIUTANG (PELANGGAN)
+        # BAGIAN PIUTANG (PELANGGAN)
         # ------------------------------------------
         with col_piutang:
             st.markdown("### Piutang Toko (Pelanggan Belum Lunas)")
@@ -355,7 +359,7 @@ with tab2:
                 nama_bersih_p_list = []
                 
                 for idx, row in df_piutang.iterrows():
-                    ket_raw = row["Keterangan Transaksi"]
+                    ket_raw = str(row["Keterangan Transaksi"])
                     nominal_awal = float(row["Masuk (Rp)"])
                     
                     if " | TOTAL_AWAL:" in ket_raw:
@@ -457,7 +461,7 @@ with tab2:
                 st.success("Semua piutang pelanggan sudah lunas dibayar penuh.")
                 
         # ------------------------------------------
-        # BAGIAN LAJUR UTANG (SUPPLIER BON)
+        # BAGIAN UTANG (SUPPLIER BON)
         # ------------------------------------------
         with col_utang:
             st.markdown("### Utang Toko (Bon Kita ke Supplier)")
@@ -470,7 +474,7 @@ with tab2:
                 nama_bersih_u_list = []
                 
                 for idx, row in df_utang.iterrows():
-                    ket_raw = row["Keterangan Transaksi"]
+                    ket_raw = str(row["Keterangan Transaksi"])
                     nominal_awal = float(row["Keluar (Rp)"])
                     
                     if " | TOTAL_AWAL:" in ket_raw:
@@ -574,13 +578,14 @@ with tab2:
         st.info("Belum ada data transaksi yang tercatat untuk dipantau.")
 
 # ==========================================
-# TAB 3: LAPORAN LABA RUGI & ANALISIS USAHA (REAL-TIME FIXED)
+# TAB 3: LAPORAN LABA RUGI & ANALISIS USAHA 
 # ==========================================
 with tab3:
     st.header("Analisis Laba Rugi Toko Anda")
     
-    # PERBAIKAN: Membaca dari df_master (data kumulatif terbaru beserta id cicilan baru)
     if not df_master.empty:
+        df_master["Tanggal"] = pd.to_datetime(df_master["Tanggal"], errors="coerce").dt.date
+        
         hari_ini = datetime.now().date()
         tiga_bulan_lalu = hari_ini - timedelta(days=90)
         
@@ -591,9 +596,10 @@ with tab3:
         elif pilihan_periode == "Bulan Ini Saja":
             tgl_mulai = hari_ini.replace(day=1)
         else:
-            tgl_mulai = df_master["Tanggal"].min()
+            tgl_terlama = df_master["Tanggal"].dropna().min()
+            tgl_mulai = tgl_terlama if pd.notna(tgl_terlama) else hari_ini
             
-        df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)]
+        df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
         
         in_utama = df_filtered[df_filtered["Kategori Spesifik"] == "Penjualan Produk Utama"]["Masuk (Rp)"].sum()
         in_jasa = df_filtered[df_filtered["Kategori Spesifik"] == "Pendapatan Jasa / Komisi"]["Masuk (Rp)"].sum()
