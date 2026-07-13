@@ -137,7 +137,6 @@ if not df_keuangan.empty:
     df_keuangan["Tanggal"] = pd.to_datetime(df_keuangan["Tanggal"], errors="coerce").dt.date
     df_keuangan["Masuk (Rp)"] = pd.to_numeric(df_keuangan["Masuk (Rp)"], errors="coerce").fillna(0)
     df_keuangan["Keluar (Rp)"] = pd.to_numeric(df_keuangan["Keluar (Rp)"], errors="coerce").fillna(0)
-    # Bersihkan spasi tidak sengaja di awal/akhir teks kategori agar grafik mendeteksi datanya
     if "Kategori Spesifik" in df_keuangan.columns:
         df_keuangan["Kategori Spesifik"] = df_keuangan["Kategori Spesifik"].astype(str).str.strip()
 
@@ -591,16 +590,17 @@ with tab3:
         
         pilihan_periode = st.selectbox("Pilih Rentang Laporan Keuangan:", ["Semua Periode", "3 Bulan Terakhir", "Bulan Ini Saja"])
         
+        # --- PERBAIKAN PENYARINGAN FILTER TANGGAL DI BAWAH INI ---
         if pilihan_periode == "3 Bulan Terakhir":
             tgl_mulai = tiga_bulan_lalu
+            df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
         elif pilihan_periode == "Bulan Ini Saja":
             tgl_mulai = hari_ini.replace(day=1)
+            df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
         else:
-            tgl_terlama = df_master["Tanggal"].dropna().min()
-            tgl_mulai = tgl_terlama if pd.notna(tgl_terlama) else hari_ini
+            # Pilihan "Semua Periode" akan mengambil seluruh isi data tanpa batasan batas hari ini (Mendukung input tahun 2026+)
+            df_filtered = df_master.copy()
             
-        df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
-        
         in_utama = df_filtered[df_filtered["Kategori Spesifik"] == "Penjualan Produk Utama"]["Masuk (Rp)"].sum()
         in_jasa = df_filtered[df_filtered["Kategori Spesifik"] == "Pendapatan Jasa / Komisi"]["Masuk (Rp)"].sum()
         in_sampingan = df_filtered[df_filtered["Kategori Spesifik"] == "Penjualan Sampingan"]["Masuk (Rp)"].sum()
