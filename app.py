@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime, timedelta
-import io
 import plotly.express as px
+# Library koneksi Google Sheets resmi dari Streamlit
+from streamlit_gsheets import GSheetsConnection
 
 # --- SETTING DASHBOARD (Harus paling atas) ---
 st.set_page_config(page_title="BUKUDIGI - Catatan Keuangan Usaha", layout="wide")
@@ -13,83 +13,95 @@ st.markdown("### *Kelola pemasukan dan pengeluaran dengan lebih rapi.*")
 
 st.divider()
 
-# --- FILE MASTER UNTUK MENYIMPAN KREDENSI UMKM (NAMA & TOKEN) ---
-file_master_kredensi = "master_kredensi_umkm.xlsx"
+# =========================================================================
+# CONFIG: HUBUNGKAN KE GOOGLE SHEETS
+# =========================================================================
+url_sheets = "https://docs.google.com/spreadsheets/d/1qtKhihSp1OiOdzIqlB7TOnnqn-Jlb6XlhVPDS_2ZyYI/edit?usp=sharing"
 
-def load_master_kredensi():
-    if os.path.exists(file_master_kredensi):
-        return pd.read_excel(file_master_kredensi)
-    else:
-        df_awal = pd.DataFrame(columns=["Nama UMKM", "Token Rahasia"])
-        df_awal.to_excel(file_master_kredensi, index=False)
-        return df_awal
+# Inisialisasi koneksi Google Sheets
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-def daftarkan_umkm_baru(nama, token):
-    df_master = load_master_kredensi()
-    new_user = pd.DataFrame([{"Nama UMKM": nama, "Token Rahasia": str(token)}])
-    df_update = pd.concat([df_master, new_user], ignore_index=True)
-    df_update.to_excel(file_master_kredensi, index=False)
+# =========================================================================
+# FUNGSI DATABASE AKUN (Membaca & Menyimpan Pendaftaran Ke Google Sheets)
+# =========================================================================
+def load_akun_dari_sheets():
+    try:
+        df = conn.read(spreadsheet=url_sheets, worksheet="Akun", ttl=0)
+        return df.dropna(subset=["Nama UMKM"])
+    except Exception:
+        return pd.DataFrame(columns=["Nama UMKM", "Token Rahasia"])
 
-# Inisialisasi Session State untuk menyimpan status login/akses
+def simpan_akun_ke_sheets(df_baru):
+    conn.update(spreadsheet=url_sheets, worksheet="Akun", data=df_baru)
+    st.cache_data.clear()
+
+# Inisialisasi Session State untuk menyimpan status login
 if "login_umkm" not in st.session_state:
     st.session_state["login_umkm"] = None
 
-# ==========================================
-# HALAMAN LOG IN / MASUK & DAFTAR
-# ==========================================
+# =========================================================================
+# HALAMAN LOGIN & PENDAFTARAN (JIKA BELUM LOGIN)
+# =========================================================================
 if st.session_state["login_umkm"] is None:
+    tab_masuk, tab_daftar = st.tabs(["🔑 Masuk Akun Usaha", "📝 Daftar Akun Usaha Baru"])
     
-    tab_masuk, tab_daftar = st.tabs(["Masuk Ke Buku Kas", "Daftar Akun Usaha Baru"])
-    
+    # --- TAB MASUK ---
     with tab_masuk:
-        st.subheader("Silakan masukkan identitas usaha Anda untuk melihat kas")
-        input_nama_masuk = st.text_input("Nama UMKM / Usaha Anda:", placeholder="Ketik nama toko Anda...")
-        input_token_masuk = st.text_input("Token / PIN Rahasia Usaha:", type="password", placeholder="Masukkan token Anda...")
+        st.subheader("Silakan masuk untuk melihat buku kas Anda")
+        input_nama_masuk = st.text_input("Nama UMKM / Usaha Anda:", placeholder="Contoh: Tempe Koro Ibu Marni", key="login_nama")
+        input_token_masuk = st.text_input("Token / PIN Rahasia Usaha:", type="password", placeholder="Masukkan PIN Anda...", key="login_pin")
         
-        tombol_masuk = st.button("Buka dan Load Buku Kas")
+        tombol_masuk = st.button("Buka dan Load Buku Kas", use_container_width=True, key="btn_login")
         
         if tombol_masuk:
-            df_master_kred = load_master_kredensi()
             nama_clean = input_nama_masuk.strip()
             token_clean = input_token_masuk.strip()
             
-            user_match = df_master_kred[df_master_kred["Nama UMKM"].str.lower() == nama_clean.lower()]
-            
-            if user_match.empty:
-                st.error("Nama UMKM belum terdaftar! Silakan daftar baru di tab sebelah.")
+            if not nama_clean or not token_clean:
+                st.error("Nama UMKM dan Token/PIN tidak boleh kosong!")
             else:
-                token_tercatat = str(user_match.iloc[0]["Token Rahasia"])
-                nama_tercatat = user_match.iloc[0]["Nama UMKM"]
+                df_akun = load_akun_dari_sheets()
+                # Cari akun di Google Sheets
+                akun_cocok = df_akun[df_akun["Nama UMKM"].str.lower() == nama_clean.lower()]
                 
-                if token_clean == token_tercatat:
-                    st.session_state["login_umkm"] = nama_tercatat
-                    st.success(f"Login Sukses! Membuka data {nama_tercatat}...")
-                    st.rerun()
+                if akun_cocok.empty:
+                    st.error("Nama UMKM belum terdaftar! Silakan daftar baru di tab sebelah.")
                 else:
-                    st.error("Token Rahasia salah! Akses ditolak.")
-                    
+                    token_seharusnya = str(akun_cocok.iloc[0]["Token Rahasia"]).strip()
+                    if token_clean == token_seharusnya:
+                        st.session_state["login_umkm"] = akun_cocok.iloc[0]["Nama UMKM"]
+                        st.success(f"Login Sukses! Membuka data {st.session_state['login_umkm']}...")
+                        st.rerun()
+                    else:
+                        st.error("Token / PIN salah! Akses ditolak.")
+                        
+    # --- TAB DAFTAR ---
     with tab_daftar:
-        st.subheader("Pendaftaran Ruang Pembukuan Baru")
-        st.write("Daftarkan toko Anda di sini agar mendapatkan file Excel kas terpisah secara otomatis.")
+        st.subheader("Pendaftaran Akun Usaha Baru (Satu Akun untuk Satu HP/Toko)")
+        input_nama_daftar = st.text_input("Nama UMKM / Usaha Baru:", placeholder="Contoh: Tempe Koro Ibu Marni", key="reg_nama")
+        input_token_daftar = st.text_input("Buat Token / PIN Rahasia Usaha:", type="password", placeholder="Masukkan angka/huruf bebas...", key="reg_pin")
         
-        input_nama_daftar = st.text_input("Nama UMKM Baru:", placeholder="Contoh: Warung Berkah, Laundry Wangi")
-        input_token_daftar = st.text_input("Buat Token / PIN Rahasia Baru (Bebas Angka/Huruf):", type="password", placeholder="Contoh: 12345 or rahasiatoko")
-        
-        tombol_daftar = st.button("Simpan dan Daftarkan Toko Sekarang")
+        tombol_daftar = st.button("Daftarkan Akun Baru", use_container_width=True, key="btn_reg")
         
         if tombol_daftar:
-            nama_df_clean = input_nama_daftar.strip()
-            token_df_clean = input_token_daftar.strip()
+            nama_reg_clean = input_nama_daftar.strip()
+            token_reg_clean = input_token_daftar.strip()
             
-            if nama_df_clean == "" or token_df_clean == "":
-                st.error("Nama UMKM dan Token tidak boleh kosong!")
+            if not nama_reg_clean or not token_reg_clean:
+                st.error("Harap isi Nama UMKM dan Token/PIN baru Anda!")
             else:
-                df_master_kred = load_master_kredensi()
-                if not df_master_kred.empty and nama_df_clean.lower() in df_master_kred["Nama UMKM"].str.lower().values:
-                    st.error("Nama UMKM ini sudah terdaftar sebelumnya! Gunakan nama lain or langsung login.")
+                df_akun = load_akun_dari_sheets()
+                # Cek apakah nama sudah dipakai
+                if not df_akun.empty and nama_reg_clean.lower() in df_akun["Nama UMKM"].str.lower().values:
+                    st.error("Nama UMKM ini sudah terdaftar! Gunakan nama lain atau silakan langsung masuk di tab sebelah.")
                 else:
-                    daftarkan_umkm_baru(nama_df_clean, token_df_clean)
-                    st.success(f"Berhasil mendaftarkan {nama_df_clean}! Silakan masuk menggunakan tab Masuk Ke Buku Kas.")
+                    # Tambah ke dataframe akun
+                    akun_baru = pd.DataFrame([{"Nama UMKM": nama_reg_clean, "Token Rahasia": token_reg_clean}])
+                    df_akun_update = pd.concat([df_akun, akun_baru], ignore_index=True)
+                    
+                    # Simpan ke Google Sheets
+                    simpan_akun_ke_sheets(df_akun_update)
+                    st.success(f"Pendaftaran Berhasil! Akun '{nama_reg_clean}' sekarang terdaftar permanen di Cloud. Silakan beralih ke tab 'Masuk Akun' untuk login.")
 
     st.stop()
 
@@ -110,33 +122,48 @@ with col_logout:
                 del st.session_state[key]
         st.rerun()
 
-nama_clean = umkm_terpilih.replace(" ", "_").lower()
-nama_file_excel = f"buku_kas_{nama_clean}.xlsx"
+st.info("Database Kas Terkunci Aman: Sinkronisasi Otomatis dengan Google Sheets Cloud")
 
-st.info(f"Database Kas Terkunci Aman: Mengelola file data: {nama_file_excel}")
-
+# --- FUNGSI LOAD & SIMPAN DATABASE MENGGUNAKAN GOOGLE SHEETS ---
 def load_data_offline():
-    if os.path.exists(nama_file_excel):
-        df = pd.read_excel(nama_file_excel)
+    try:
+        df = conn.read(spreadsheet=url_sheets, worksheet="Kas_Marni", ttl=0)
+        df = df.dropna(subset=["Tanggal", "Keterangan Transaksi"], how="all")
         return df
-    else:
+    except Exception:
         kolom = [
-            "Tanggal", "Keterangan Transaksi", "Jenis", 
+            "Nama UMKM", "Tanggal", "Keterangan Transaksi", "Jenis", 
             "Kategori Spesifik", "Masuk (Rp)", "Keluar (Rp)", 
             "Status Pembayaran", "Metode Pembayaran", "Harga Total Asli", "DP Awal"
         ]
-        df_baru = pd.DataFrame(columns=kolom)
-        df_baru.to_excel(nama_file_excel, index=False)
-        return df_baru
+        return pd.DataFrame(columns=kolom)
 
-df_keuangan = load_data_offline()
+def simpan_data_offline(df_baru):
+    # Buang kolom index internal "ID_Asli" atau "Saldo Sisa (Rp)" sebelum upload jika ada
+    kolom_wajib = [
+        "Nama UMKM", "Tanggal", "Keterangan Transaksi", "Jenis", 
+        "Kategori Spesifik", "Masuk (Rp)", "Keluar (Rp)", 
+        "Status Pembayaran", "Metode Pembayaran", "Harga Total Asli", "DP Awal"
+    ]
+    df_save = df_baru[kolom_wajib].copy()
+    conn.update(spreadsheet=url_sheets, worksheet="Kas_Marni", data=df_save)
+    st.cache_data.clear()
 
-# Pastikan kolom baru tersedia di data lama
+# Load semua data dari Sheets
+df_all = load_data_offline()
+
+# Upgrade path jika kolom "Nama UMKM" belum ada di file lama
+if "Nama UMKM" not in df_all.columns and not df_all.empty:
+    df_all.insert(0, "Nama UMKM", "Tempe Koro Ibu Marni")
+
+# Filter data khusus untuk UMKM yang sedang login saja
+df_keuangan = df_all[df_all["Nama UMKM"].str.lower() == umkm_terpilih.lower()].copy()
+
+# Pastikan struktur kolom selalu lengkap
 for col, default_val in [("Harga Total Asli", 0), ("DP Awal", 0)]:
     if col not in df_keuangan.columns:
         df_keuangan[col] = default_val
 
-# --- PERBAIKAN DAN STRIP SPASI LIAR SAAT LOAD EXCEL ---
 if not df_keuangan.empty:
     df_keuangan["Tanggal"] = pd.to_datetime(df_keuangan["Tanggal"], errors="coerce").dt.date
     df_keuangan["Masuk (Rp)"] = pd.to_numeric(df_keuangan["Masuk (Rp)"], errors="coerce").fillna(0)
@@ -146,7 +173,7 @@ if not df_keuangan.empty:
     if "Kategori Spesifik" in df_keuangan.columns:
         df_keuangan["Kategori Spesifik"] = df_keuangan["Kategori Spesifik"].astype(str).str.strip()
 
-# Pembuatan Data Kumulatif & ID Asli database
+# Pembuatan Data Kumulatif & ID Asli database utama (df_all)
 if not df_keuangan.empty:
     df_master = df_keuangan.copy()
     saldo_kumulatif = []
@@ -157,7 +184,7 @@ if not df_keuangan.empty:
         saldo_kumulatif.append(saldo_sekarang)
         
     df_master["Saldo Sisa (Rp)"] = saldo_kumulatif
-    df_master["ID_Asli"] = df_master.index
+    df_master["ID_Asli"] = df_master.index # Menyimpan index asli dari df_all untuk proses hapus/edit
 else:
     df_master = pd.DataFrame()
 
@@ -185,7 +212,7 @@ with tab1:
         kategori_spesifik = st.selectbox("Kategori Spesifik Usaha", kategori_opsi)
 
     with col2:
-        keterangan = st.text_area("Keterangan Transaksi / Nama Pelanggan / Supplier", placeholder="Contoh: Pembelian ayam potong 10kg dari Pak Ali\nContoh pemasukan: Penjualan pesanan kue tart Ibu Rina")
+        keterangan = st.text_area("Keterangan Transaksi / Nama Pelanggan / Supplier", placeholder="Contoh: Pembelian ayam potong 10kg dari Pak Ali")
         
         if jenis == "Pemasukan":
             status_opsi = ["Lunas", "Belum Lunas / Piutang"]
@@ -209,8 +236,7 @@ with tab1:
         input_dana_teks = st.text_input(
             "Harga Total Semua / Nilai Transaksi (Rp)", 
             value=st.session_state["jumlah_dana_raw"],
-            placeholder="Contoh: 150.000",
-            help="Ketik total harga asli kesepakatan penjualan/pembelian."
+            placeholder="Contoh: 150.000"
         )
 
         angka_polos = "".join([c for c in input_dana_teks if c.isdigit()])
@@ -231,11 +257,7 @@ with tab1:
             if "jumlah_dp_raw" not in st.session_state:
                 st.session_state["jumlah_dp_raw"] = ""
                 
-            input_dp_teks = st.text_input(
-                "Jika Ada DP, Masukkan Nilainya (Rp) - Isi 0 Jika Tanpa DP",
-                value=st.session_state["jumlah_dp_raw"],
-                placeholder="Contoh: 50.000"
-            )
+            input_dp_teks = st.text_input("Jika Ada DP, Masukkan Nilainya (Rp) - Isi 0 Jika Tanpa DP", value=st.session_state["jumlah_dp_raw"])
             angka_dp_polos = "".join([c for c in input_dp_teks if c.isdigit()])
             if angka_dp_polos:
                 dp_awal = int(angka_dp_polos)
@@ -249,7 +271,7 @@ with tab1:
                     st.session_state["jumlah_dp_raw"] = ""
                     st.rerun()
         
-        submit_kas = st.button("Simpan Ke Buku Kas", use_container_width=True)
+        submit_kas = st.button("Simpan Ke Buku Kas Cloud", use_container_width=True)
 
     if submit_kas:
         if keterangan.strip() == "":
@@ -279,7 +301,8 @@ with tab1:
                 keterangan_final = f"{keterangan} | TOTAL_AWAL:{harga_total_asli}"
 
             new_row = pd.DataFrame([{
-                "Tanggal": tanggal,
+                "Nama UMKM": umkm_terpilih,
+                "Tanggal": str(tanggal),
                 "Keterangan Transaksi": keterangan_final,
                 "Jenis": jenis,
                 "Kategori Spesifik": kategori_spesifik.strip(),
@@ -291,13 +314,13 @@ with tab1:
                 "DP Awal": dp_awal
             }])
             
-            df_update = pd.concat([df_keuangan, new_row], ignore_index=True)
-            df_update.to_excel(nama_file_excel, index=False)
+            df_update = pd.concat([df_all, new_row], ignore_index=True)
+            simpan_data_offline(df_update)
             
             st.session_state["jumlah_dana_raw"] = ""
             if "jumlah_dp_raw" in st.session_state:
                 st.session_state["jumlah_dp_raw"] = ""
-            st.success("Transaksi berhasil dicatat ke sistem!")
+            st.success("Transaksi berhasil disimpan permanen ke Google Sheets!")
             st.rerun()
 
     st.divider()
@@ -307,7 +330,6 @@ with tab1:
         
         total_harga_semua_pemasukan = df_master[df_master["Jenis"] == "Pemasukan"]["Harga Total Asli"].sum()
         total_dp_masuk = df_master[df_master["Jenis"] == "Pemasukan"]["DP Awal"].sum()
-        
         total_uang_masuk_kas = df_master["Masuk (Rp)"].sum()
         total_biaya_keluar_kas = df_master["Keluar (Rp)"].sum()
         sisa_kas_aktif = total_uang_masuk_kas - total_biaya_keluar_kas
@@ -315,16 +337,16 @@ with tab1:
         df_p_belum = df_master[(df_master["Jenis"] == "Pemasukan") & (df_master["Status Pembayaran"] == "Belum Lunas / Piutang")]
         total_piutang_jalan = 0
         for idx, row in df_p_belum.iterrows():
-            kunci_cari = f"ID_REF:{idx}"
-            df_cicilan = df_master[df_master["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
+            kunci_cari = f"ID_REF:{row['ID_Asli']}"
+            df_cicilan = df_all[df_all["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
             total_cicilan_masuk = df_cicilan["Masuk (Rp)"].sum()
             total_piutang_jalan += (row["Harga Total Asli"] - row["DP Awal"] - total_cicilan_masuk)
 
         df_u_belum = df_master[(df_master["Jenis"] == "Pengeluaran") & (df_master["Status Pembayaran"] == "Bon / Utang Usaha")]
         total_utang_jalan = 0
         for idx, row in df_u_belum.iterrows():
-            kunci_cari = f"ID_REF:{idx}"
-            df_cicilan = df_master[df_master["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
+            kunci_cari = f"ID_REF:{row['ID_Asli']}"
+            df_cicilan = df_all[df_all["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
             total_cicilan_keluar = df_cicilan["Keluar (Rp)"].sum()
             total_utang_jalan += (row["Harga Total Asli"] - total_cicilan_keluar)
         
@@ -375,34 +397,22 @@ with tab1:
         pilihan_tabel_hapus = st.radio("Pilih sumber hapus data:", ["Tabel Pemasukan", "Tabel Pengeluaran"], horizontal=True)
         
         if pilihan_tabel_hapus == "Tabel Pemasukan" and not df_pemasukan.empty:
-            no_hapus = st.number_input("Masukkan nomor 'No' baris Pemasukan:", min_value=1, max_value=len(df_pemasukan), step=1)
-            if st.button("Hapus Baris Pemasukan"):
+            no_hapus = st.number_input("Masukkan nomor 'No' baris Pemasukan:", min_value=1, max_value=len(df_pemasukan), step=1, key="no_hapus_in")
+            if st.button("Hapus Baris Pemasukan", key="btn_hapus_in"):
                 id_target = df_pemasukan.loc[no_hapus, "ID_Asli"]
-                df_keuangan_baru = df_keuangan.drop(id_target).reset_index(drop=True)
-                df_keuangan_baru.to_excel(nama_file_excel, index=False)
-                st.success("Data berhasil dihapus!")
+                df_keuangan_baru = df_all.drop(id_target).reset_index(drop=True)
+                simpan_data_offline(df_keuangan_baru)
+                st.success("Data berhasil dihapus dari cloud!")
                 st.rerun()
                 
         elif pilihan_tabel_hapus == "Tabel Pengeluaran" and not df_pengeluaran.empty:
-            no_hapus = st.number_input("Masukkan nomor 'No' baris Pengeluaran:", min_value=1, max_value=len(df_pengeluaran), step=1)
-            if st.button("Hapus Baris Pengeluaran"):
+            no_hapus = st.number_input("Masukkan nomor 'No' baris Pengeluaran:", min_value=1, max_value=len(df_pengeluaran), step=1, key="no_hapus_out")
+            if st.button("Hapus Baris Pengeluaran", key="btn_hapus_out"):
                 id_target = df_pengeluaran.loc[no_hapus, "ID_Asli"]
-                df_keuangan_baru = df_keuangan.drop(id_target).reset_index(drop=True)
-                df_keuangan_baru.to_excel(nama_file_excel, index=False)
-                st.success("Data berhasil dihapus!")
+                df_keuangan_baru = df_all.drop(id_target).reset_index(drop=True)
+                simpan_data_offline(df_keuangan_baru)
+                st.success("Data berhasil dihapus dari cloud!")
                 st.rerun()
-        
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df_master.drop(columns=["ID_Asli"]).to_excel(writer, index=False, sheet_name='Laporan_Buku_Kas')
-        buffer.seek(0)
-        st.download_button(
-            label="Download File Pembukuan Excel Toko Anda (.xlsx)",
-            data=buffer,
-            file_name=f"Laporan_Kas_{nama_clean}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
     else:
         st.info("Buku pembukuan kas Anda masih kosong.")
 
@@ -411,17 +421,13 @@ with tab1:
 # ==========================================
 with tab2:
     st.header("Panel Monitoring dan Pelunasan Tanggungan Usaha")
-    st.write("Halaman ini melacak pengurangan utang dan piutang toko secara bertahap (real-time).")
     
     if not df_master.empty:
         col_piutang, col_utang = st.columns(2)
         
-        # ------------------------------------------
-        # BAGIAN PIUTANG (PELANGGAN)
-        # ------------------------------------------
+        # --- BAGIAN PIUTANG ---
         with col_piutang:
             st.markdown("### Piutang Toko (Pelanggan Belum Lunas)")
-            
             df_piutang_raw = df_master[(df_master["Jenis"] == "Pemasukan") & (df_master["Status Pembayaran"] == "Belum Lunas / Piutang")].copy()
             
             valid_piutang_rows = []
@@ -430,18 +436,13 @@ with tab2:
                     ket_raw = str(row["Keterangan Transaksi"])
                     nominal_awal = float(row["Harga Total Asli"])
                     dp_dikurangi = float(row["DP Awal"])
+                    nama_bersih_p = ket_raw.split(" | TOTAL_AWAL:")[0] if " | TOTAL_AWAL:" in ket_raw else ket_raw
                     
-                    if " | TOTAL_AWAL:" in ket_raw:
-                        nama_bersih_p = ket_raw.split(" | TOTAL_AWAL:")[0]
-                    else:
-                        nama_bersih_p = ket_raw
-                    
-                    kunci_cari = f"ID_REF:{idx}"
-                    df_cicilan = df_master[df_master["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
+                    kunci_cari = f"ID_REF:{row['ID_Asli']}"
+                    df_cicilan = df_all[df_all["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
                     total_cicilan_masuk = df_cicilan["Masuk (Rp)"].sum()
                     
                     sisa_p = nominal_awal - dp_dikurangi - total_cicilan_masuk
-                    
                     if sisa_p > 0:
                         row_copy = row.copy()
                         row_copy["Keterangan Usaha"] = nama_bersih_p
@@ -452,8 +453,7 @@ with tab2:
             df_piutang = pd.DataFrame(valid_piutang_rows)
             
             if not df_piutang.empty:
-                st.warning(f"Ada {len(df_piutang)} catatan piutang menggantung dari pelanggan.")
-                
+                st.warning(f"Ada {len(df_piutang)} catatan piutang menggantung.")
                 df_piutang_tampil = df_piutang.copy()
                 df_piutang_tampil.index = range(1, len(df_piutang_tampil) + 1)
                 df_piutang_tampil.index.name = "No"
@@ -461,79 +461,57 @@ with tab2:
                 df_piutang_v = pd.DataFrame(index=df_piutang_tampil.index)
                 df_piutang_v["Tanggal"] = df_piutang_tampil["Tanggal"].astype(str)
                 df_piutang_v["Keterangan Pelanggan"] = df_piutang_tampil["Keterangan Usaha"]
-                df_piutang_v["Total Harga Asli (Rp)"] = df_piutang_tampil["Harga Total Asli"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
-                df_piutang_v["DP Awal (Rp)"] = df_piutang_tampil["DP Awal"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
-                df_piutang_v["Total Dicicil (Rp)"] = df_piutang_tampil["Sudah Dicicil (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
                 df_piutang_v["Sisa Piutang (Rp)"] = df_piutang_tampil["Total Sisa Piutang Bersih"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
-                
                 st.dataframe(df_piutang_v, use_container_width=True)
                 
-                st.markdown("##### Proses Pembayaran Piutang Pelanggan")
                 no_lunas_piutang = st.number_input("Pilih 'No' baris piutang:", min_value=1, max_value=len(df_piutang_tampil), step=1, key="p_no")
-                
-                tanggal_bayar_p = st.date_input("Tanggal Penerimaan Uang Cicilan:", datetime.now().date(), key="p_tgl_bayar")
+                tanggal_bayar_p = st.date_input("Tanggal Cicilan Diterima:", datetime.now().date(), key="p_tgl_bayar")
                 status_baru_p = st.selectbox("Status Pembayaran Sekarang:", ["Belum Lunas (Dicicil Lagi)", "Lunas dibayar Penuh"], key="p_stat")
                 
-                if "val_bayar_p" not in st.session_state:
-                    st.session_state["val_bayar_p"] = ""
-
+                if "val_bayar_p" not in st.session_state: st.session_state["val_bayar_p"] = ""
                 def format_ribuan_p():
                     teks = st.session_state["p_input_dana"]
                     angka = "".join([c for c in teks if c.isdigit()])
-                    if angka:
-                        st.session_state["val_bayar_p"] = f"{int(angka):,.0f}".replace(",", ".")
-                    else:
-                        st.session_state["val_bayar_p"] = ""
+                    st.session_state["val_bayar_p"] = f"{int(angka):,.0f}".replace(",", ".") if angka else ""
 
-                label_p = "Jumlah Uang Cicilan yang Diterima (Rp):"
-                input_bayar_p = st.text_input(label_p, value=st.session_state["val_bayar_p"], key="p_input_dana", on_change=format_ribuan_p, placeholder="Contoh: 50.000")
-                
+                input_bayar_p = st.text_input("Jumlah Uang Cicilan (Rp):", value=st.session_state["val_bayar_p"], key="p_input_dana", on_change=format_ribuan_p)
                 angka_p_polos = "".join([c for c in input_bayar_p if c.isdigit()])
                 nominal_p = int(angka_p_polos) if angka_p_polos else 0
                 
-                if st.button("Simpan Pembayaran Piutang", use_container_width=True):
+                if st.button("Simpan Cicilan Piutang", use_container_width=True):
                     if nominal_p <= 0:
-                        st.error("Masukkan jumlah uang pembayaran yang valid!")
+                        st.error("Masukkan jumlah uang valid!")
                     else:
                         id_target = df_piutang_tampil.loc[no_lunas_piutang, "ID_Asli"]
                         ket_asli_toko = df_piutang_tampil.loc[no_lunas_piutang, "Keterangan Usaha"]
                         sisa_maksimal_p = df_piutang_tampil.loc[no_lunas_piutang, "Total Sisa Piutang Bersih"]
                         
                         if status_baru_p == "Lunas dibayar Penuh" or nominal_p >= sisa_maksimal_p:
-                            df_keuangan.loc[id_target, "Status Pembayaran"] = "Lunas"
+                            df_all.loc[id_target, "Status Pembayaran"] = "Lunas"
                             prefix_p = "[Pelunasan Total]"
                         else:
-                            df_keuangan.loc[id_target, "Status Pembayaran"] = "Belum Lunas / Piutang"
+                            df_all.loc[id_target, "Status Pembayaran"] = "Belum Lunas / Piutang"
                             prefix_p = "[Cicilan Baru]"
                         
                         new_trans = pd.DataFrame([{
-                            "Tanggal": tanggal_bayar_p,
+                            "Nama UMKM": umkm_terpilih,
+                            "Tanggal": str(tanggal_bayar_p),
                             "Keterangan Transaksi": f"{prefix_p} {ket_asli_toko} | ID_REF:{id_target}",
                             "Jenis": "Pemasukan",
                             "Kategori Spesifik": "Penjualan Produk Utama",
-                            "Masuk (Rp)": nominal_p,
-                            "Keluar (Rp)": 0,
-                            "Status Pembayaran": "Lunas",
-                            "Metode Pembayaran": "Tunai",
-                            "Harga Total Asli": nominal_p,
-                            "DP Awal": 0
+                            "Masuk (Rp)": nominal_p, "Keluar (Rp)": 0,
+                            "Status Pembayaran": "Lunas", "Metode Pembayaran": "Tunai",
+                            "Harga Total Asli": nominal_p, "DP Awal": 0
                         }])
-                        
-                        df_update = pd.concat([df_keuangan, new_trans], ignore_index=True)
-                        df_update.to_excel(nama_file_excel, index=False)
-                        
+                        simpan_data_offline(pd.concat([df_all, new_trans], ignore_index=True))
                         st.session_state["val_bayar_p"] = ""
-                        st.success("Pembayaran cicilan piutang berhasil dicatat!")
-                        st.rerun()
+                        st.success("Pembayaran tercatat permanen!"); st.rerun()
             else:
-                st.success("Semua piutang pelanggan sudah lunas dibayar penuh.")
+                st.success("Semua piutang pelanggan lunas.")
                 
-        # ------------------------------------------
-        # BAGIAN UTANG (SUPPLIER BON)
-        # ------------------------------------------
+        # --- BAGIAN UTANG ---
         with col_utang:
             st.markdown("### Utang Toko (Bon Kita ke Supplier)")
-            
             df_utang_raw = df_master[(df_master["Jenis"] == "Pengeluaran") & (df_master["Status Pembayaran"] == "Bon / Utang Usaha")].copy()
             
             valid_utang_rows = []
@@ -541,30 +519,24 @@ with tab2:
                 for idx, row in df_utang_raw.iterrows():
                     ket_raw = str(row["Keterangan Transaksi"])
                     nominal_awal = float(row["Harga Total Asli"])
+                    nama_clean_u = ket_raw.split(" | TOTAL_AWAL:")[0] if " | TOTAL_AWAL:" in ket_raw else ket_raw
                     
-                    if " | TOTAL_AWAL:" in ket_raw:
-                        nama_bersih_u = ket_raw.split(" | TOTAL_AWAL:")[0]
-                    else:
-                        nama_bersih_u = ket_raw
-                    
-                    kunci_cari = f"ID_REF:{idx}"
-                    df_cicilan = df_master[df_master["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
+                    kunci_cari = f"ID_REF:{row['ID_Asli']}"
+                    df_cicilan = df_all[df_all["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
                     total_cicilan_keluar = df_cicilan["Keluar (Rp)"].sum()
                     
                     sisa_u = nominal_awal - total_cicilan_keluar
-                    
                     if sisa_u > 0:
                         row_copy = row.copy()
-                        row_copy["Keterangan Usaha"] = nama_bersih_u
+                        row_copy["Keterangan Usaha"] = nama_clean_u
                         row_copy["Sudah Dicicil (Rp)"] = total_cicilan_keluar
                         row_copy["Total Sisa Utang Bersih"] = sisa_u
                         valid_utang_rows.append(row_copy)
                         
             df_utang = pd.DataFrame(valid_utang_rows)
-                
+            
             if not df_utang.empty:
-                st.error(f"Ada {len(df_utang)} catatan bon barang yang belum kita lunasi ke supplier.")
-                
+                st.error(f"Ada {len(df_utang)} catatan bon belum lunas ke supplier.")
                 df_utang_tampil = df_utang.copy()
                 df_utang_tampil.index = range(1, len(df_utang_tampil) + 1)
                 df_utang_tampil.index.name = "No"
@@ -572,94 +544,69 @@ with tab2:
                 df_utang_v = pd.DataFrame(index=df_utang_tampil.index)
                 df_utang_v["Tanggal"] = df_utang_tampil["Tanggal"].astype(str)
                 df_utang_v["Keterangan Supplier"] = df_utang_tampil["Keterangan Usaha"]
-                df_utang_v["Total Utang (Rp)"] = df_utang_tampil["Harga Total Asli"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
-                df_utang_v["Total Dicicil (Rp)"] = df_utang_tampil["Sudah Dicicil (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
                 df_utang_v["Sisa Utang (Rp)"] = df_utang_tampil["Total Sisa Utang Bersih"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
-                
                 st.dataframe(df_utang_v, use_container_width=True)
                 
-                st.markdown("##### Proses Bayar Bon / Utang ke Supplier")
                 no_lunas_utang = st.number_input("Pilih 'No' baris utang:", min_value=1, max_value=len(df_utang_tampil), step=1, key="u_no")
-                
-                tanggal_bayar_u = st.date_input("Tanggal Pembayaran Cicilan Bon:", datetime.now().date(), key="u_tgl_bayar")
+                tanggal_bayar_u = st.date_input("Tanggal Cicilan Dibayar:", datetime.now().date(), key="u_tgl_bayar")
                 status_baru_u = st.selectbox("Status Pembayaran Sekarang:", ["Bon / Utang Usaha (Dicicil Baru)", "Dibayar Lunas Penuh"], key="u_stat")
                 
-                if "val_bayar_u" not in st.session_state:
-                    st.session_state["val_bayar_u"] = ""
-
+                if "val_bayar_u" not in st.session_state: st.session_state["val_bayar_u"] = ""
                 def format_ribuan_u():
                     teks = st.session_state["u_input_dana"]
                     angka = "".join([c for c in teks if c.isdigit()])
-                    if angka:
-                        st.session_state["val_bayar_u"] = f"{int(angka):,.0f}".replace(",", ".")
-                    else:
-                        st.session_state["val_bayar_u"] = ""
+                    st.session_state["val_bayar_u"] = f"{int(angka):,.0f}".replace(",", ".") if angka else ""
 
-                label_u = "Jumlah Uang Cicilan yang Dibayarkan (Rp):"
-                input_bayar_u = st.text_input(label_u, value=st.session_state["val_bayar_u"], key="u_input_dana", on_change=format_ribuan_u, placeholder="Contoh: 50.000")
-                
+                input_bayar_u = st.text_input("Jumlah Uang Dibayar (Rp):", value=st.session_state["val_bayar_u"], key="u_input_dana", on_change=format_ribuan_u)
                 angka_u_polos = "".join([c for c in input_bayar_u if c.isdigit()])
                 nominal_u = int(angka_u_polos) if angka_u_polos else 0
                 
                 if st.button("Simpan Pembayaran Utang", use_container_width=True):
                     if nominal_u <= 0:
-                        st.error("Masukkan jumlah uang pembayaran yang valid!")
+                        st.error("Masukkan jumlah uang valid!")
                     else:
                         id_target = df_utang_tampil.loc[no_lunas_utang, "ID_Asli"]
                         ket_asli_toko = df_utang_tampil.loc[no_lunas_utang, "Keterangan Usaha"]
                         sisa_maksimal_u = df_utang_tampil.loc[no_lunas_utang, "Total Sisa Utang Bersih"]
                         
                         if status_baru_u == "Dibayar Lunas Penuh" or nominal_u >= sisa_maksimal_u:
-                            df_keuangan.loc[id_target, "Status Pembayaran"] = "Dibayar (Lunas)"
+                            df_all.loc[id_target, "Status Pembayaran"] = "Dibayar (Lunas)"
                             prefix_u = "[Pelunasan Total]"
                         else:
-                            df_keuangan.loc[id_target, "Status Pembayaran"] = "Bon / Utang Usaha"
+                            df_all.loc[id_target, "Status Pembayaran"] = "Bon / Utang Usaha"
                             prefix_u = "[Bayar Cicilan]"
                         
                         new_trans = pd.DataFrame([{
-                            "Tanggal": tanggal_bayar_u,
+                            "Nama UMKM": umkm_terpilih,
+                            "Tanggal": str(tanggal_bayar_u),
                             "Keterangan Transaksi": f"{prefix_u} {ket_asli_toko} | ID_REF:{id_target}",
-                            "Jenis": "Pengeluaran",
-                            "Kategori Spesifik": "Bahan Baku / Stok Barang",
-                            "Masuk (Rp)": 0,
-                            "Keluar (Rp)": nominal_u,
-                            "Status Pembayaran": "Dibayar (Lunas)",
-                            "Metode Pembayaran": "Tunai",
-                            "Harga Total Asli": nominal_u,
-                            "DP Awal": 0
+                            "Jenis": "Pengeluaran", "Kategori Spesifik": "Bahan Baku / Stok Barang",
+                            "Masuk (Rp)": 0, "Keluar (Rp)": nominal_u,
+                            "Status Pembayaran": "Dibayar (Lunas)", "Metode Pembayaran": "Tunai",
+                            "Harga Total Asli": nominal_u, "DP Awal": 0
                         }])
-                        
-                        df_update = pd.concat([df_keuangan, new_trans], ignore_index=True)
-                        df_update.to_excel(nama_file_excel, index=False)
-                        
+                        simpan_data_offline(pd.concat([df_all, new_trans], ignore_index=True))
                         st.session_state["val_bayar_u"] = ""
-                        st.success("Pembayaran bon ke supplier berhasil dicatat!")
-                        st.rerun()
+                        st.success("Pembayaran utang tercatat permanen!"); st.rerun()
             else:
-                st.success("Aman! Toko Anda bebas dari segala jenis tanggungan bon/utang belanja.")
+                st.success("Bebas dari utang/bon supplier.")
     else:
-        st.info("Belum ada data transaksi yang tercatat untuk dipantau.")
+        st.info("Belum ada transaksi tercatat.")
 
 # ==========================================
 # TAB 3: LAPORAN LABA RUGI & ANALISIS USAHA 
 # ==========================================
 with tab3:
     st.header("Analisis Laba Rugi Toko Anda")
-    
     if not df_master.empty:
         df_master["Tanggal"] = pd.to_datetime(df_master["Tanggal"], errors="coerce").dt.date
-        
-        hari_ini = datetime.now().date()
-        tiga_bulan_lalu = hari_ini - timedelta(days=90)
-        
         pilihan_periode = st.selectbox("Pilih Rentang Laporan Keuangan:", ["Semua Periode", "3 Bulan Terakhir", "Bulan Ini Saja"])
         
+        hari_ini = datetime.now().date()
         if pilihan_periode == "3 Bulan Terakhir":
-            tgl_mulai = tiga_bulan_lalu
-            df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
+            df_filtered = df_master[(df_master["Tanggal"] >= (hari_ini - timedelta(days=90))) & (df_master["Tanggal"] <= hari_ini)].copy()
         elif pilihan_periode == "Bulan Ini Saja":
-            tgl_mulai = hari_ini.replace(day=1)
-            df_filtered = df_master[(df_master["Tanggal"] >= tgl_mulai) & (df_master["Tanggal"] <= hari_ini)].copy()
+            df_filtered = df_master[(df_master["Tanggal"] >= hari_ini.replace(day=1)) & (df_master["Tanggal"] <= hari_ini)].copy()
         else:
             df_filtered = df_master.copy()
             
@@ -682,38 +629,19 @@ with tab3:
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Pemasukan (Omzet Nyata)", f"Rp {total_omzet_produk:,.0f}".replace(",", "."))
         m2.metric("Total Biaya Pengeluaran", f"Rp {total_biaya_operasional:,.0f}".replace(",", "."))
-        if laba_Internal >= 0:
-            m3.metric("LABA BERSIH USAHA", f"Rp {laba_Internal:,.0f}".replace(",", "."))
-        else:
-            m3.metric("RUGI BERSIH USAHA", f"Rp {abs(laba_Internal):,.0f}".replace(",", "."))
-            
+        m3.metric("LABA BERSIH USAHA" if laba_Internal >= 0 else "RUGI BERSIH USAHA", f"Rp {abs(laba_Internal):,.0f}".replace(",", "."))
+        
         st.divider()
         col_kiri, col_kanan = st.columns(2)
-        
         with col_kiri:
             st.subheader("Grafik Sumber Pendapatan")
             if total_omzet_produk > 0:
-                df_pie_in = pd.DataFrame({
-                    "Sumber Pendapatan": ["Produk Utama", "Jasa/Komisi", "Sampingan", "Lain-lain"],
-                    "Jumlah (Rp)": [in_utama, in_jasa, in_sampingan, in_lain]
-                })
-                df_pie_in = df_pie_in[df_pie_in["Jumlah (Rp)"] > 0]
-                
-                fig_in = px.pie(df_pie_in, values="Jumlah (Rp)", names="Sumber Pendapatan", hole=0.3)
-                st.plotly_chart(fig_in, use_container_width=True)
-            else:
-                st.info("Belum ada data pendapatan untuk grafik.")
-
+                df_pie_in = pd.DataFrame({"Sumber": ["Produk Utama", "Jasa/Komisi", "Sampingan", "Lain-lain"], "Jumlah (Rp)": [in_utama, in_jasa, in_sampingan, in_lain]})
+                st.plotly_chart(px.pie(df_pie_in[df_pie_in["Jumlah (Rp)"] > 0], values="Jumlah (Rp)", names="Sumber", hole=0.3), use_container_width=True)
+            else: st.info("Belum ada data.")
         with col_kanan:
             st.subheader("Alokasi Struktur Biaya")
             if total_biaya_operasional > 0:
-                df_pie_out = pd.DataFrame({
-                    "Kategori Pengeluaran": ["Bahan/Stok", "Operasional", "Gaji", "Alat Usaha", "Transportasi", "Lain-lain"],
-                    "Jumlah (Rp)": [out_bahan, out_operasional, out_gaji, out_alat, out_trans, out_lain]
-                })
-                df_pie_out = df_pie_out[df_pie_out["Jumlah (Rp)"] > 0]
-                
-                fig_out = px.pie(df_pie_out, values="Jumlah (Rp)", names="Kategori Pengeluaran", hole=0.3, color_discrete_sequence=px.colors.sequential.RdBu)
-                st.plotly_chart(fig_out, use_container_width=True)
-            else:
-                st.info("Belum ada data pengeluaran untuk grafik.")
+                df_pie_out = pd.DataFrame({"Kategori": ["Bahan/Stok", "Operasional", "Gaji", "Alat Usaha", "Transportasi", "Lain-lain"], "Jumlah (Rp)": [out_bahan, out_operasional, out_gaji, out_alat, out_trans, out_lain]})
+                st.plotly_chart(px.pie(df_pie_out[df_pie_out["Jumlah (Rp)"] > 0], values="Jumlah (Rp)", names="Kategori", hole=0.3, color_discrete_sequence=px.colors.sequential.RdBu), use_container_width=True)
+            else: st.info("Belum ada data.")
