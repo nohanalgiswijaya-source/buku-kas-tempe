@@ -68,6 +68,8 @@ if st.session_state["login_umkm"] is None:
                     st.error("Nama UMKM belum terdaftar! Silakan daftar baru di tab sebelah.")
                 else:
                     token_seharusnya = str(akun_cocok.iloc[0]["Token Rahasia"]).strip()
+                    if token_seharusnya.endswith(".0"):
+                        token_seharusnya = token_seharusnya[:-2]
                     if token_clean == token_seharusnya:
                         st.session_state["login_umkm"] = akun_cocok.iloc[0]["Nama UMKM"]
                         st.success(f"Login Sukses! Membuka data {st.session_state['login_umkm']}...")
