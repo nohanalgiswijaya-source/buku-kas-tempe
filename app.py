@@ -33,6 +33,15 @@ def bersihkan_kolom_teks(df, kolom):
         df[kolom] = ""
     return df
 
+def bersihkan_keterangan_tampil(teks):
+    """Hilangkan tag internal (TOTAL_AWAL / ID_REF) dari Keterangan Transaksi
+    saat ditampilkan ke pengguna, tanpa mengubah data asli di Google Sheets."""
+    teks = str(teks)
+    for pemisah in [" | TOTAL_AWAL:", " | ID_REF:"]:
+        if pemisah in teks:
+            teks = teks.split(pemisah)[0]
+    return teks.strip()
+
 # =========================================================================
 # FUNGSI DATABASE AKUN (Membaca & Menyimpan Pendaftaran Ke Google Sheets)
 # =========================================================================
@@ -426,7 +435,7 @@ with tab1:
             kolom_in = ["Tanggal", "Keterangan Transaksi", "Kategori Spesifik", "Harga Total Asli", "DP Awal", "Masuk (Rp)", "Saldo Sisa (Rp)", "Status Pembayaran", "Metode Pembayaran"]
             df_pemasukan_v = df_pemasukan[kolom_in].copy()
             df_pemasukan_v["Tanggal"] = df_pemasukan_v["Tanggal"].astype(str)
-            df_pemasukan_v["Keterangan Transaksi"] = df_pemasukan_v["Keterangan Transaksi"].apply(lambda x: str(x).split(" | TOTAL_AWAL:")[0])
+            df_pemasukan_v["Keterangan Transaksi"] = df_pemasukan_v["Keterangan Transaksi"].apply(bersihkan_keterangan_tampil)
             df_pemasukan_v["Harga Total Asli"] = df_pemasukan_v["Harga Total Asli"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             df_pemasukan_v["DP Awal"] = df_pemasukan_v["DP Awal"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             df_pemasukan_v["Masuk (Rp)"] = df_pemasukan_v["Masuk (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
@@ -441,7 +450,7 @@ with tab1:
             kolom_out = ["Tanggal", "Keterangan Transaksi", "Kategori Spesifik", "Harga Total Asli", "Keluar (Rp)", "Saldo Sisa (Rp)", "Status Pembayaran", "Metode Pembayaran"]
             df_pengeluaran_v = df_pengeluaran[kolom_out].copy()
             df_pengeluaran_v["Tanggal"] = df_pengeluaran_v["Tanggal"].astype(str)
-            df_pengeluaran_v["Keterangan Transaksi"] = df_pengeluaran_v["Keterangan Transaksi"].apply(lambda x: str(x).split(" | TOTAL_AWAL:")[0])
+            df_pengeluaran_v["Keterangan Transaksi"] = df_pengeluaran_v["Keterangan Transaksi"].apply(bersihkan_keterangan_tampil)
             df_pengeluaran_v["Harga Total Asli"] = df_pengeluaran_v["Harga Total Asli"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             df_pengeluaran_v["Keluar (Rp)"] = df_pengeluaran_v["Keluar (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
             df_pengeluaran_v["Saldo Sisa (Rp)"] = df_pengeluaran_v["Saldo Sisa (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
