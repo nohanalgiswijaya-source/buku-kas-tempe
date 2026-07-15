@@ -308,6 +308,24 @@ with tab1:
                     st.session_state["jumlah_dp_raw"] = ""
                     st.rerun()
 
+        elif jenis == "Pengeluaran" and status_bayar == "Bon / Utang Usaha":
+            if "jumlah_dp_utang_raw" not in st.session_state:
+                st.session_state["jumlah_dp_utang_raw"] = ""
+
+            input_dp_utang_teks = st.text_input("Sudah Dibayar Berapa Saat Ini (Rp) - Isi 0 Jika Belum Bayar Sama Sekali", value=st.session_state["jumlah_dp_utang_raw"])
+            angka_dp_utang_polos = "".join([c for c in input_dp_utang_teks if c.isdigit()])
+            if angka_dp_utang_polos:
+                dp_awal = int(angka_dp_utang_polos)
+                teks_dp_utang_terformat = f"{dp_awal:,.0f}".replace(",", ".")
+                if input_dp_utang_teks != teks_dp_utang_terformat:
+                    st.session_state["jumlah_dp_utang_raw"] = teks_dp_utang_terformat
+                    st.rerun()
+            else:
+                dp_awal = 0
+                if input_dp_utang_teks != "":
+                    st.session_state["jumlah_dp_utang_raw"] = ""
+                    st.rerun()
+
         submit_kas = st.button("Simpan Ke Buku Kas Cloud", use_container_width=True)
 
     if submit_kas:
@@ -327,7 +345,7 @@ with tab1:
             else:
                 masuk = 0
                 if jenis == "Pengeluaran" and status_bayar == "Bon / Utang Usaha":
-                    keluar = 0
+                    keluar = dp_awal
                 else:
                     keluar = harga_total_asli
 
@@ -385,7 +403,7 @@ with tab1:
             kunci_cari = f"ID_REF:{row['ID_Asli']}"
             df_cicilan = df_all[df_all["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
             total_cicilan_keluar = df_cicilan["Keluar (Rp)"].sum()
-            total_utang_jalan += (row["Harga Total Asli"] - total_cicilan_keluar)
+            total_utang_jalan += (row["Harga Total Asli"] - row["DP Awal"] - total_cicilan_keluar)
 
         data_ringkasan = {
             "Total Semua Harga (Omzet Pemasukan)": [f"Rp {total_harga_semua_pemasukan:,.0f}".replace(",", ".")],
@@ -559,17 +577,20 @@ with tab2:
                 for idx, row in df_utang_raw.iterrows():
                     ket_raw = str(row["Keterangan Transaksi"])
                     nominal_awal = float(row["Harga Total Asli"])
+                    dp_dikurangi_u = float(row["DP Awal"])
                     nama_clean_u = ket_raw.split(" | TOTAL_AWAL:")[0] if " | TOTAL_AWAL:" in ket_raw else ket_raw
 
                     kunci_cari = f"ID_REF:{row['ID_Asli']}"
                     df_cicilan = df_all[df_all["Keterangan Transaksi"].str.contains(kunci_cari, na=False)]
                     total_cicilan_keluar = df_cicilan["Keluar (Rp)"].sum()
 
-                    sisa_u = nominal_awal - total_cicilan_keluar
+                    total_sudah_dibayar_u = dp_dikurangi_u + total_cicilan_keluar
+                    sisa_u = nominal_awal - total_sudah_dibayar_u
                     if sisa_u > 0:
                         row_copy = row.copy()
                         row_copy["Keterangan Usaha"] = nama_clean_u
-                        row_copy["Sudah Dicicil (Rp)"] = total_cicilan_keluar
+                        row_copy["Total Harga Awal"] = nominal_awal
+                        row_copy["Sudah Dicicil (Rp)"] = total_sudah_dibayar_u
                         row_copy["Total Sisa Utang Bersih"] = sisa_u
                         valid_utang_rows.append(row_copy)
 
@@ -584,6 +605,8 @@ with tab2:
                 df_utang_v = pd.DataFrame(index=df_utang_tampil.index)
                 df_utang_v["Tanggal"] = df_utang_tampil["Tanggal"].astype(str)
                 df_utang_v["Keterangan Supplier"] = df_utang_tampil["Keterangan Usaha"]
+                df_utang_v["Total Harga (Rp)"] = df_utang_tampil["Total Harga Awal"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
+                df_utang_v["Sudah Dibayar (Rp)"] = df_utang_tampil["Sudah Dicicil (Rp)"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
                 df_utang_v["Sisa Utang (Rp)"] = df_utang_tampil["Total Sisa Utang Bersih"].apply(lambda x: f"{x:,.0f}".replace(",", "."))
                 st.dataframe(df_utang_v, use_container_width=True)
 
